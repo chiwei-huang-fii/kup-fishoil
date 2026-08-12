@@ -121,9 +121,25 @@ SOURCES = [("PChome 24h", fetch_pchome), ("momo 購物網", fetch_momo)]
 KUP_QUERIES = ["韓國 晶球魚油", "K.U.P 晶球魚油", "KUP 魚油",
                "晶球魚油 EPA DHA", "藥品級 魚油 韓國"]
 
+# 回退資料：K.U.P 在 PChome 常缺貨，且有貨的通路(露天/蝦皮/iOPEN)反爬抓不到。
+# 這批是從 BigGo 跨通路比價頁擷取的「真實」單盒價格與商品連結（來源：BigGo，2026/08）。
+KUP_FALLBACK = [
+    {"通路": "露天・溫溫", "品項": "韓國 K.U.P晶球魚油 28包/盒 2000mg", "價格": 999,
+     "網址": "https://www.ruten.com.tw/item/22423678518277/"},
+    {"通路": "富凱昆陽藥局(iOPEN)", "品項": "K.U.P 90%晶球魚油 單盒/28包 2000mg", "價格": 1580,
+     "網址": "https://mall.iopenmall.tw/109156/index.php?action=product_detail&prod_no=P10915614485046"},
+    {"通路": "久億藥局", "品項": "韓國 K.U.P晶球魚油 2000mg 28包/盒（特價）", "價格": 1588,
+     "網址": "https://www.joy91.com.tw/products/%E9%9F%93%E5%9C%8B-kup-%E6%99%B6%E7%90%83%E9%AD%9A%E6%B2%B9-2000mg28%E5%8C%85%E7%9B%92-dha-epa-%E5%BE%AE%E5%9E%8B%E9%A1%86%E7%B2%92%E6%A5%B5%E5%BA%A6%E5%A5%BD%E5%90%9E%E3%80%90%E4%B9%85%E5%84%84%E8%97%A5%E5%B1%80%E3%80%91"},
+    {"通路": "好晴朗(iOPEN)", "品項": "K.U.P晶球魚油90% 28包/盒 DHA EPA 韓國進口", "價格": 1980,
+     "網址": "https://mall.iopenmall.tw/024334/index.php?action=product_detail&prod_no=P2433407918255"},
+    {"通路": "蝦皮・理可生活", "品項": "K.U.P 韓國進口 高純度微粒晶球膠囊魚油 28包/盒", "價格": 2600,
+     "網址": "https://shopee.tw/product/18157001/24620741331"},
+]
+
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_kup():
+    """回傳 (rows, is_live)。優先抓 PChome 現貨；抓不到就用 BigGo 擷取的真實資料墊底。"""
     seen, rows = set(), []
     for q in KUP_QUERIES:
         try:
@@ -136,7 +152,9 @@ def fetch_kup():
                     rows.append(x)
         except Exception:  # noqa: BLE001
             pass
-    return rows
+    if rows:
+        return rows, True
+    return [dict(r) for r in KUP_FALLBACK], False
 
 
 def estimate_packs(name):
@@ -220,7 +238,7 @@ def compare_brands(brand_items):
         found = []
         if disp.startswith("K.U.P") or "晶球" in kw:
             try:
-                found = fetch_kup()          # K.U.P 專用精準搜尋
+                found, _live = fetch_kup()   # K.U.P 專用（PChome→BigGo 墊底）
             except Exception:  # noqa: BLE001
                 found = []
         else:
@@ -291,13 +309,15 @@ with tab1:
 
     if go:
         rows, errors = [], []
+        kup_live = True
         term_l = term.lower()
         is_kup = ("晶球" in term) or ("kup" in term_l) or ("k.u.p" in term_l)
         with st.spinner("正在搜尋各通路，請稍候…"):
             if is_kup:
-                # K.U.P 專用精準搜尋（PChome 多關鍵字 + 嚴格過濾）
+                # K.U.P 專用：PChome 現貨優先，抓不到就用 BigGo 擷取的真實資料墊底
                 try:
-                    rows += fetch_kup()
+                    kup_rows, kup_live = fetch_kup()
+                    rows += kup_rows
                 except Exception as e:  # noqa: BLE001
                     errors.append(f"PChome（{type(e).__name__}）")
             else:
@@ -309,6 +329,11 @@ with tab1:
         df = build_df(rows)
         if only_fish and not df.empty:
             df = df[df["品項"].apply(looks_like_fishoil)].reset_index(drop=True)
+        if is_kup and not kup_live:
+            st.info("K.U.P 於 PChome 目前多為缺貨，以下為 BigGo 跨通路比價擷取的真實單盒價格"
+                    "（每筆皆附商品連結）。點下方連結可看 BigGo 即時更新。")
+            st.link_button("🔗 BigGo・K.U.P 即時比價（可驗證）",
+                           "https://biggo.com.tw/s/%E6%99%B6%E7%90%83%E9%AD%9A%E6%B2%B9%20k.u.p")
 
         if df.empty:
             st.warning("這次沒有抓到明碼價格。可能是關鍵字太少結果，或通路把價格藏在動態頁面。"
