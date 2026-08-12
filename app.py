@@ -55,10 +55,26 @@ KUP_USAGE = [
     "孕哺婦女、重大疾病、計劃手術、凝血功能不佳或服用抗凝血藥劑者，食用前先諮詢醫療專業人員。",
 ]
 KUP_REF_PRICES = pd.DataFrame({
-    "通路": ["久億藥局（特價）", "Goodfind 跨賣場平均"],
-    "售價 (NT$)": [1588, 4670],
-    "每包單價": [round(1588 / 28, 1), round(4670 / 28, 1)],
+    "通路 / 賣家": ["露天・溫溫", "富凱昆陽藥局", "久億藥局",
+                 "iOPEN／蝦皮 多家藥局", "蝦皮・理可生活"],
+    "單盒售價 (NT$)": [999, 1580, 1588, 1980, 2600],
+    "備註": ["最低", "現貨", "特價（原價2,250）", "最常見價", "較高"],
 })
+
+# 驗證過的商品頁／購買通路連結（供報告佐證：點下去是真實販售頁）
+# 跨通路比價頁(BigGo/飛比)永遠顯示目前有貨的賣場，最適合當證據，不會出現缺貨頁。
+KUP_LINKS = [
+    ("BigGo 跨通路即時比價・K.U.P 專屬（最推薦當證據）",
+     "https://biggo.com.tw/s/%E6%99%B6%E7%90%83%E9%AD%9A%E6%B2%B9%20k.u.p"),
+    ("飛比 feebee 跨通路即時比價",
+     "https://feebee.com.tw/s/%E6%99%B6%E7%90%83%E9%AD%9A%E6%B2%B9/"),
+    ("K.U.P 官方網站（官方購買通路總表）",
+     "https://kupomega3.com.tw/"),
+    ("久億藥局 商品頁（單盒特價 $1,588）",
+     "https://www.joy91.com.tw/products/%E9%9F%93%E5%9C%8B-kup-%E6%99%B6%E7%90%83%E9%AD%9A%E6%B2%B9-2000mg28%E5%8C%85%E7%9B%92-dha-epa-%E5%BE%AE%E5%9E%8B%E9%A1%86%E7%B2%92%E6%A5%B5%E5%BA%A6%E5%A5%BD%E5%90%9E%E3%80%90%E4%B9%85%E5%84%84%E8%97%A5%E5%B1%80%E3%80%91"),
+    ("蝦皮 商品頁",
+     "https://shopee.tw/product/3975876/24418691796"),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +115,28 @@ def fetch_momo(term, limit=30):
 
 
 SOURCES = [("PChome 24h", fetch_pchome), ("momo 購物網", fetch_momo)]
+
+# K.U.P 專用：用多組關鍵字去撈，再嚴格過濾成「同時含『晶球』和『魚油』」的品項，
+# 這樣才不會把『晶球肉泥』(貓食) 等雜訊抓進來，精準鎖定 K.U.P。
+KUP_QUERIES = ["韓國 晶球魚油", "K.U.P 晶球魚油", "KUP 魚油",
+               "晶球魚油 EPA DHA", "藥品級 魚油 韓國"]
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_kup():
+    seen, rows = set(), []
+    for q in KUP_QUERIES:
+        try:
+            for x in fetch_pchome(q, limit=40):
+                nm = x.get("品項", "")
+                if "晶球" in nm and "魚油" in nm and to_price(x.get("價格")) is not None:
+                    if nm in seen:
+                        continue
+                    seen.add(nm)
+                    rows.append(x)
+        except Exception:  # noqa: BLE001
+            pass
+    return rows
 
 
 def estimate_packs(name):
@@ -180,11 +218,17 @@ def compare_brands(brand_items):
     rows = []
     for disp, kw in brand_items:
         found = []
-        for _, fn in SOURCES:
+        if disp.startswith("K.U.P") or "晶球" in kw:
             try:
-                found += fn(kw)
+                found = fetch_kup()          # K.U.P 專用精準搜尋
             except Exception:  # noqa: BLE001
-                pass
+                found = []
+        else:
+            for _, fn in SOURCES:
+                try:
+                    found += fn(kw)
+                except Exception:  # noqa: BLE001
+                    pass
         cand = []
         for x in found:
             if not looks_like_fishoil(x.get("品項", "")):
@@ -240,19 +284,31 @@ with tab1:
     with col_in:
         term = st.text_input("商品或成分名稱", value="晶球魚油",
                              label_visibility="collapsed",
-                             placeholder="輸入商品名稱，例如：K.U.P 晶球魚油")
+                             placeholder="輸入商品名稱，例如：晶球魚油")
     with col_btn:
         go = st.button("開始搜尋", type="primary", use_container_width=True)
+    only_fish = st.checkbox("只顯示魚油相關結果（過濾掉不相干品項）", value=True)
 
     if go:
         rows, errors = [], []
+        term_l = term.lower()
+        is_kup = ("晶球" in term) or ("kup" in term_l) or ("k.u.p" in term_l)
         with st.spinner("正在搜尋各通路，請稍候…"):
-            for label, fn in SOURCES:
+            if is_kup:
+                # K.U.P 專用精準搜尋（PChome 多關鍵字 + 嚴格過濾）
                 try:
-                    rows += fn(term)
+                    rows += fetch_kup()
                 except Exception as e:  # noqa: BLE001
-                    errors.append(f"{label}（{type(e).__name__}）")
+                    errors.append(f"PChome（{type(e).__name__}）")
+            else:
+                for label, fn in SOURCES:
+                    try:
+                        rows += fn(term)
+                    except Exception as e:  # noqa: BLE001
+                        errors.append(f"{label}（{type(e).__name__}）")
         df = build_df(rows)
+        if only_fish and not df.empty:
+            df = df[df["品項"].apply(looks_like_fishoil)].reset_index(drop=True)
 
         if df.empty:
             st.warning("這次沒有抓到明碼價格。可能是關鍵字太少結果，或通路把價格藏在動態頁面。"
@@ -351,6 +407,14 @@ with tab3:
             st.markdown(f"- {u}")
         st.markdown("#### 市場價格參考")
         st.table(KUP_REF_PRICES)
+
+    st.markdown("#### 🔗 商品頁 / 購買通路（點連結可連到販售頁，供報告佐證）")
+    lcols = st.columns(2)
+    for i, (label, url) in enumerate(KUP_LINKS):
+        with lcols[i % 2]:
+            st.link_button(label, url, use_container_width=True)
+    st.caption("提醒：單一賣場的特定商品可能『售完／下架』，該連結會顯示缺貨頁（這也代表資料是即時的）；"
+               "跨通路比價頁（BigGo／飛比）永遠列出目前有貨的賣場，最適合當佐證截圖。")
 
     st.caption("資料由公開網路資訊彙整，價格與規格會隨時間變動，實際以各賣場頁面為準。"
                "本資料僅供整理參考，非醫療建議。")
