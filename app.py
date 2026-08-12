@@ -55,9 +55,9 @@ KUP_USAGE = [
     "孕哺婦女、重大疾病、計劃手術、凝血功能不佳或服用抗凝血藥劑者，食用前先諮詢醫療專業人員。",
 ]
 KUP_REF_PRICES = pd.DataFrame({
-    "通路 / 賣家": ["露天・溫溫", "富凱昆陽藥局", "iOPEN／蝦皮 多家藥局", "蝦皮・理可生活"],
-    "單盒售價 (NT$)": [999, 1580, 1980, 2600],
-    "備註": ["最低", "現貨", "最常見價", "較高"],
+    "通路 / 賣家": ["富凱昆陽藥局", "iOPEN／蝦皮 多家藥局", "蝦皮・理可生活"],
+    "單盒售價 (NT$)": [1580, 1980, 2600],
+    "備註": ["現貨最低", "最常見價", "較高"],
 })
 
 # 驗證過的商品頁／購買通路連結（供報告佐證：點下去是真實販售頁）
@@ -118,17 +118,19 @@ SOURCES = [("PChome 24h", fetch_pchome), ("momo 購物網", fetch_momo)]
 KUP_QUERIES = ["韓國 晶球魚油", "K.U.P 晶球魚油", "KUP 魚油",
                "晶球魚油 EPA DHA", "藥品級 魚油 韓國"]
 
-# 回退資料：K.U.P 在 PChome 常缺貨，且有貨的通路(露天/蝦皮/iOPEN)反爬抓不到。
-# 這批是從 BigGo 跨通路比價頁擷取的「真實」單盒價格與商品連結（來源：BigGo，2026/08）。
+# K.U.P 專屬 BigGo 比價頁：永遠顯示目前有貨的賣場，點下去一定連得到（不會下架/空白）。
+KUP_BIGGO_URL = "https://biggo.com.tw/s/%E6%99%B6%E7%90%83%E9%AD%9A%E6%B2%B9%20k.u.p"
+
+# 回退資料：K.U.P 在 PChome 常缺貨，且有貨的通路(蝦皮/iOPEN)反爬抓不到。
+# 這批是從 BigGo 跨通路比價頁擷取的「真實」單盒價格（來源：BigGo，2026/08）；
+# 連結一律導向 BigGo K.U.P 比價頁，確保永遠點得開、看得到現貨。
 KUP_FALLBACK = [
-    {"通路": "露天・溫溫", "品項": "韓國 K.U.P晶球魚油 28包/盒 2000mg", "價格": 999,
-     "網址": "https://www.ruten.com.tw/item/22423678518277/"},
-    {"通路": "富凱昆陽藥局(iOPEN)", "品項": "K.U.P 90%晶球魚油 單盒/28包 2000mg", "價格": 1580,
-     "網址": "https://mall.iopenmall.tw/109156/index.php?action=product_detail&prod_no=P10915614485046"},
-    {"通路": "好晴朗(iOPEN)", "品項": "K.U.P晶球魚油90% 28包/盒 DHA EPA 韓國進口", "價格": 1980,
-     "網址": "https://mall.iopenmall.tw/024334/index.php?action=product_detail&prod_no=P2433407918255"},
-    {"通路": "蝦皮・理可生活", "品項": "K.U.P 韓國進口 高純度微粒晶球膠囊魚油 28包/盒", "價格": 2600,
-     "網址": "https://shopee.tw/product/18157001/24620741331"},
+    {"通路": "富凱昆陽藥局(iOPEN)", "品項": "K.U.P 90%晶球魚油 單盒/28包 2000mg",
+     "價格": 1580, "網址": KUP_BIGGO_URL},
+    {"通路": "好晴朗(iOPEN)", "品項": "K.U.P晶球魚油90% 28包/盒 DHA EPA 韓國進口",
+     "價格": 1980, "網址": KUP_BIGGO_URL},
+    {"通路": "蝦皮・理可生活", "品項": "K.U.P 韓國進口 高純度微粒晶球膠囊魚油 28包/盒",
+     "價格": 2600, "網址": KUP_BIGGO_URL},
 ]
 
 
@@ -328,9 +330,7 @@ with tab1:
         if only_fish and not df.empty:
             df = df[df["品項"].apply(looks_like_fishoil)].reset_index(drop=True)
         if is_kup and not kup_live:
-            st.info("K.U.P 於 PChome 目前多為缺貨，以下為 BigGo 跨通路比價擷取的真實單盒價格"
-                    "（每筆皆附商品連結）。點下方連結可看 BigGo 即時更新。")
-            st.link_button("🔗 BigGo・K.U.P 即時比價（可驗證）",
+            st.link_button("🔗 BigGo・K.U.P 即時比價（點此看目前有貨賣場）",
                            "https://biggo.com.tw/s/%E6%99%B6%E7%90%83%E9%AD%9A%E6%B2%B9%20k.u.p")
 
         if df.empty:
