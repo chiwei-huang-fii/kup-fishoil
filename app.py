@@ -48,6 +48,18 @@ html, body, [class*="css"] {
   border-radius:10px; font-weight:700;
 }
 button[data-baseweb="tab"]{ font-size:15px; font-weight:600; }
+.kup-fish{
+  display:inline-block;
+  animation: kupswim 3.2s ease-in-out infinite;
+  transform-origin:center;
+}
+@keyframes kupswim{
+  0%   { transform: translateY(0)   rotate(0deg); }
+  25%  { transform: translateY(-6px) rotate(-6deg); }
+  50%  { transform: translateY(0)   rotate(0deg); }
+  75%  { transform: translateY(4px)  rotate(6deg); }
+  100% { transform: translateY(0)   rotate(0deg); }
+}
 .kup-badges{ display:flex; flex-wrap:wrap; gap:10px; margin-top:4px; }
 .kup-badge{
   background:#eaf6f6; color:#0a5b63; border:1px solid #bfe3e3;
@@ -336,7 +348,7 @@ def to_excel_compare(df):
 # ---------------------------------------------------------------------------
 st.markdown("""
 <div class="kup-hero">
-  <p class="t">🐟 K.U.P 晶球魚油 · 市場資料查詢</p>
+  <p class="t"><span class="kup-fish">🐟</span> K.U.P 晶球魚油 · 市場資料查詢</p>
   <p class="s">韓國進口 · 藥品級 EE 型態魚油 · 微型無縫晶球膠囊｜自動抓取通路價格・整理成 Excel</p>
   <div class="kup-chips">
     <span class="c">Omega-3 90%</span>
