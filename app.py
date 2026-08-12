@@ -258,17 +258,20 @@ def compare_brands(brand_items):
             cand.append(x)
         if not cand:
             rows.append({"品牌": disp, "代表品項（最低價）": "— 這次未抓到 —",
-                         "售價 (NT$)": None, "每單位價": None,
-                         "找到筆數": 0, "網址": ""})
+                         "最低售價 (NT$)": None, "平均售價 (NT$)": None,
+                         "每單位價(平均/顆)": None, "找到筆數": 0, "網址": ""})
             continue
         cand.sort(key=lambda x: x["_p"])
         best = cand[0]
+        prices = [c["_p"] for c in cand]
+        avg = sum(prices) / len(prices)
         units = parse_units(best["品項"])
         rows.append({
             "品牌": disp,
             "代表品項（最低價）": best["品項"][:42],
-            "售價 (NT$)": int(best["_p"]),
-            "每單位價": round(best["_p"] / units, 1) if units else None,
+            "最低售價 (NT$)": int(best["_p"]),
+            "平均售價 (NT$)": int(round(avg)),
+            "每單位價(平均/顆)": round(avg / units, 1) if units else None,
             "找到筆數": len(cand),
             "網址": best["網址"],
         })
@@ -366,10 +369,16 @@ with tab1:
 
 with tab2:
     st.subheader("競品比較（自動搜尋大廠牌）")
-    st.caption("程式會同時搜尋 K.U.P 與各大魚油品牌，各抓回最便宜的魚油品項，做並排比較並可下載 Excel。")
+    st.caption("勾選要比較的品牌 → 按「開始比較」。程式會各抓回最便宜的魚油品項，"
+               "並算出最低價與平均價，做並排比較、可下載 Excel。")
 
     all_brands = list(BRANDS.keys())
-    chosen = st.multiselect("要比較的品牌（可自行增減）", options=all_brands, default=all_brands)
+    st.markdown("**要比較的品牌**（點方塊即可勾選／取消）")
+    bcols = st.columns(3)
+    chosen = []
+    for i, b in enumerate(all_brands):
+        if bcols[i % 3].checkbox(b, value=True, key=f"brand_{i}"):
+            chosen.append(b)
     extra = st.text_input("再加一個自訂品牌（選填）", placeholder="例如：Swisse 魚油")
 
     if st.button("開始比較", type="primary"):
@@ -377,27 +386,28 @@ with tab2:
         if extra.strip():
             items.append((extra.strip(), extra.strip()))
         if not items:
-            st.warning("請至少選一個品牌。")
+            st.warning("請至少勾選一個品牌。")
         else:
             with st.spinner("正在比較各品牌，請稍候（品牌越多越久）…"):
                 cdf = compare_brands(tuple(items))
-            priced = cdf[cdf["售價 (NT$)"].notna()].copy()
+            priced = cdf[cdf["最低售價 (NT$)"].notna()].copy()
 
             if priced.empty:
                 st.warning("這次各品牌都沒抓到明碼價格，稍後再試或減少品牌數量。")
             else:
-                cheapest = priced.loc[priced["售價 (NT$)"].idxmin(), "品牌"]
-                c1, c2, c3 = st.columns(3)
+                cheapest = priced.loc[priced["最低售價 (NT$)"].idxmin(), "品牌"]
+                c1, c2, c3, c4 = st.columns(4)
                 c1.metric("比較品牌數", f"{len(priced)}")
                 c2.metric("最低售價品牌", cheapest)
-                c3.metric("最低售價", f"${int(priced['售價 (NT$)'].min()):,}")
+                c3.metric("最低售價", f"${int(priced['最低售價 (NT$)'].min()):,}")
+                c4.metric("平均售價", f"${int(round(priced['平均售價 (NT$)'].mean())):,}")
 
                 st.dataframe(
                     cdf, use_container_width=True, hide_index=True,
                     column_config={"網址": st.column_config.LinkColumn("連結", display_text="開啟")})
 
-                st.subheader("各品牌代表售價")
-                st.bar_chart(priced.set_index("品牌")["售價 (NT$)"])
+                st.subheader("各品牌平均售價")
+                st.bar_chart(priced.set_index("品牌")["平均售價 (NT$)"])
 
                 st.download_button(
                     "⬇️ 下載競品比價 Excel", data=to_excel_compare(cdf),
@@ -406,7 +416,8 @@ with tab2:
                     type="primary")
 
             st.caption("註：各品牌劑型與每份 EPA+DHA 含量不同，售價僅供概覽；"
-                       "精準比較請看各商品頁的每份濃度。『每單位價』由品名推估，估不到會留空。")
+                       "精準比較請看各商品頁的每份濃度。『每單位價(平均/顆)』＝平均售價÷推估顆數，"
+                       "估不到會留空。")
 
 with tab3:
     st.subheader("K.U.P 晶球魚油")
