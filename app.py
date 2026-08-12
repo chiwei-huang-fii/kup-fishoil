@@ -135,8 +135,8 @@ KUP_FALLBACK = [
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_kup():
-    """回傳 (rows, is_live)。優先抓 PChome 現貨；抓不到就用 BigGo 擷取的真實資料墊底。"""
+def _fetch_kup_live():
+    """只抓 PChome 現貨（這部分可快取）；抓不到回空清單。"""
     seen, rows = set(), []
     for q in KUP_QUERIES:
         try:
@@ -149,6 +149,12 @@ def fetch_kup():
                     rows.append(x)
         except Exception:  # noqa: BLE001
             pass
+    return rows
+
+
+def fetch_kup():
+    """回傳 (rows, is_live)。墊底資料不快取，改資料就即時反映。"""
+    rows = _fetch_kup_live()
     if rows:
         return rows, True
     return [dict(r) for r in KUP_FALLBACK], False
@@ -227,7 +233,6 @@ def parse_units(name):
     return base * (int(mm.group(1)) if mm else 1)
 
 
-@st.cache_data(ttl=600, show_spinner=False)
 def compare_brands(brand_items):
     """brand_items: tuple of (顯示名, 搜尋關鍵字)；每個品牌抓回最便宜的魚油品項。"""
     rows = []
