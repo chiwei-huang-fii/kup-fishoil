@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K.U.P 晶球魚油 · 資料彙整工具</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#14263a; --bg:#eef2f5; --panel:#ffffff; --muted:#5f7183;
+    --line:#dbe3ea; --accent:#0e7c86; --accent-dk:#0a5b63; --gold:#a9802f;
+    --soft:#eaf4f4; --warn:#8a5a10;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --sans:"Segoe UI","PingFang TC","Microsoft JhengHei","Noto Sans TC",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px 64px}
+
+  /* header */
+  header.top{background:var(--ink);color:#fff}
+  .top-in{max-width:1040px;margin:0 auto;padding:22px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .top h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.3px}
+  .top .sub{font-size:12.5px;color:#9db4c4;margin-top:3px}
+  .btn{background:var(--accent);color:#fff;border:none;padding:11px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .15s}
+  .btn:hover{background:var(--accent-dk)}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:transparent;border:1px solid #40566b;color:#cfe0ea}
+  .btn.ghost:hover{background:#1d3450}
+
+  /* hero card */
+  .hero{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-top:26px;overflow:hidden}
+  .hero-head{padding:24px 26px 20px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-size:11.5px;letter-spacing:2px;color:var(--accent);font-weight:700;text-transform:uppercase}
+  .hero-head h2{margin:6px 0 4px;font-size:26px;letter-spacing:.5px}
+  .hero-head .tag{color:var(--muted);font-size:14px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line)}
+  .stat{background:var(--panel);padding:18px 20px}
+  .stat .n{font-family:var(--mono);font-size:22px;font-weight:600;color:var(--ink)}
+  .stat .n small{font-size:13px;color:var(--muted);font-weight:400;margin-left:2px}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:2px}
+
+  /* section */
+  section.blk{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-top:22px;overflow:hidden}
+  .blk-head{display:flex;align-items:baseline;gap:12px;padding:18px 24px;border-bottom:1px solid var(--line)}
+  .blk-head .idx{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:700}
+  .blk-head h3{margin:0;font-size:16px}
+  .blk-head .hint{margin-left:auto;font-size:12px;color:var(--muted)}
+  .blk-body{padding:20px 24px}
+
+  /* price table */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;color:var(--muted);font-weight:600;background:#f7f9fb}
+  td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+  .price-known{color:var(--accent-dk);font-weight:600}
+  .price-na{color:var(--muted);font-style:italic;font-size:12.5px}
+  .lo{background:#eef7ee}
+  .hi{background:#fdf3ef}
+  tr:hover td{background:#fafcfd}
+  tr.lo:hover td,tr.hi:hover td{background:inherit}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;background:var(--soft);color:var(--accent-dk);margin-left:6px}
+  .analysis{margin-top:14px;background:var(--soft);border-radius:10px;padding:14px 16px;font-size:13px;color:var(--ink)}
+  .analysis b{color:var(--accent-dk)}
+
+  /* spec grid */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+  .cell{background:var(--panel);padding:13px 16px}
+  .cell .k{font-size:12px;color:var(--muted)}
+  .cell .v{font-size:14.5px;margin-top:1px}
+  .cell .v .mono{font-family:var(--mono)}
+  .omega{display:flex;gap:14px;margin-top:16px;flex-wrap:wrap}
+  .obar{flex:1;min-width:150px;background:#f7f9fb;border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .obar .top-row{display:flex;justify-content:space-between;align-items:baseline}
+  .obar .nm{font-weight:600}
+  .obar .mg{font-family:var(--mono);font-size:18px;color:var(--accent-dk);font-weight:600}
+  .track{height:8px;background:#e3ebf0;border-radius:6px;margin-top:9px;overflow:hidden}
+  .fill{height:100%;background:var(--accent);border-radius:6px}
+  .fill.dha{background:#3a97a0}
+
+  /* certifications */
+  .certs{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .cert{border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
+  .cert .mark{width:34px;height:34px;border-radius:8px;background:var(--soft);color:var(--accent-dk);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;font-family:var(--mono)}
+  .cert.gold .mark{background:#f6efdd;color:var(--gold)}
+  .cert .nm{font-weight:600;font-size:14px}
+  .cert .ds{font-size:12.5px;color:var(--muted);margin-top:2px}
+
+  /* usage list */
+  ul.usage{list-style:none;margin:0;padding:0}
+  ul.usage li{padding:10px 0 10px 26px;border-bottom:1px solid var(--line);position:relative;font-size:14px}
+  ul.usage li:last-child{border-bottom:none}
+  ul.usage li:before{content:"";position:absolute;left:4px;top:17px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  ul.usage li.warn:before{background:var(--warn)}
+  ul.usage li.warn{color:var(--warn)}
+
+  /* custom items */
+  .addrow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .addrow input{flex:1;min-width:160px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit}
+  .addrow input:focus{outline:none;border-color:var(--accent)}
+  .btn.sm{padding:10px 16px;font-size:13.5px}
+  .empty{color:var(--muted);font-size:13px;padding:8px 2px}
+  .rm{color:#b34a4a;cursor:pointer;font-size:12px;border:none;background:none;font-family:inherit}
+  .rm:hover{text-decoration:underline}
+
+  /* footer / sources */
+  .sources{margin-top:26px;font-size:12.5px;color:var(--muted)}
+  .sources h4{color:var(--ink);font-size:13px;margin:0 0 8px}
+  .sources a{color:var(--accent-dk);text-decoration:none}
+  .sources a:hover{text-decoration:underline}
+  .disc{margin-top:14px;padding:13px 15px;background:#fbf6ec;border:1px solid #eadfc4;border-radius:9px;font-size:12.5px;color:#6a5320}
+  .meta{margin-top:10px;font-size:12px;color:var(--muted)}
+
+  @media(max-width:720px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .grid,.certs{grid-template-columns:1fr}
+    .hero-head h2{font-size:22px}
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div>
+      <h1>保健食品資料彙整工具</h1>
+      <div class="sub">運用程式化資料收集 · 自動整理成 Excel · 主題品項：K.U.P 晶球魚油</div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn ghost" onclick="printReport()">列印 / 存 PDF</button>
+      <button class="btn" onclick="exportExcel()">匯出 Excel</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-head">
+      <div class="eyebrow">主題品項 · Product Dossier</div>
+      <h2 id="pname">K.U.P 晶球魚油</h2>
+      <div class="tag">韓國進口 · 藥品級 EE 型態魚油 · 微型無縫晶球膠囊 · 2000mg × 28 包／盒</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n">90<small>%</small></div><div class="l">Omega-3 高純度</div></div>
+      <div class="stat"><div class="n">1680<small>mg</small></div><div class="l">EPA + DHA（每包）</div></div>
+      <div class="stat"><div class="n">0.38<small>cm</small></div><div class="l">微型晶球膠囊</div></div>
+      <div class="stat"><div class="n">5<small>★</small></div><div class="l">IFOS 認證等級</div></div>
+    </div>
+  </div>
+
+  <!-- 01 PRICE -->
+  <section class="blk">
+    <div class="blk-head"><span class="idx">01</span><h3>各通路價格比較</h3><span class="hint">✱ 為自動抓取到明碼者</span></div>
+    <div class="blk-body">
+      <table id="priceTable">
+        <thead><tr><th>通路</th><th>品項／規格</th><th class="num">售價 (NT$)</th><th class="num">每包單價</th><th>備註</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="analysis" id="priceAnalysis"></div>
+    </div>
+  </section>
+
+  <!-- 02 SPEC -->
+  <section class="blk">
+    <div class="blk-head"><span class="idx">02</span><h3>規格與成分</h3><span class="hint">DHA / EPA · 濃度</span></div>
+    <div class="blk-body">
+      <div class="grid" id="specGrid"></div>
+      <div class="omega">
+        <div class="obar">
+          <div class="top-row"><span class="nm">EPA</span><span class="mg">920 mg</span></div>
+          <div class="track"><div class="fill" style="width:54.8%"></div></div>
+        </div>
+        <div class="obar">
+          <div class="top-row"><span class="nm">DHA</span><span class="mg">760 mg</span></div>
+          <div class="track"><div class="fill dha" style="width:45.2%"></div></div>
+        </div>
+      </div>
+      <div class="analysis">每包含純魚油 <b>2000 mg</b>，其中 EPA 920 mg + DHA 760 mg，<b>EPA+DHA 合計 1680 mg，占純魚油 84%</b>；Omega-3 整體濃度標示達 <b>90%</b>。屬乙酯型 (EE) 藥品級魚油。</div>
+    </div>
+  </section>
+
+  <!-- 03 CERT -->
+  <section class="blk">
+    <div class="blk-head"><span class="idx">03</span><h3>認證與品質</h3><span class="hint">第三方檢測 · 製程</span></div>
+    <div class="blk-body">
+      <div class="certs" id="certList"></div>
+    </div>
+  </section>
+
+  <!-- 04 USAGE -->
+  <section class="blk">
+    <div class="blk-head"><span class="idx">04</span><h3>食用方式與注意事項</h3></div>
+    <div class="blk-body">
+      <ul class="usage" id="usageList"></ul>
+    </div>
+  </section>
+
+  <!-- CUSTOM ITEMS -->
+  <section class="blk">
+    <div class="blk-head"><span class="idx">＋</span><h3>加入其他品項一併匯出</h3><span class="hint">批次比較用</span></div>
+    <div class="blk-body">
+      <div class="addrow">
+        <input id="ci_name" placeholder="品項名稱（例：三得利 DHA&EPA）">
+        <input id="ci_price" placeholder="售價 NT$（可留空）">
+        <input id="ci_note" placeholder="備註 / 通路">
+        <button class="btn sm" onclick="addItem()">加入清單</button>
+      </div>
+      <table id="customTable">
+        <thead><tr><th>品項</th><th class="num">售價 (NT$)</th><th>備註</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="empty" id="customEmpty">尚未加入品項。加入後會一起寫進匯出的 Excel。</div>
+    </div>
+  </section>
+
+  <!-- SOURCES -->
+  <div class="sources">
+    <h4>資料來源</h4>
+    PChome 24h · momo購物網 · 博客來 · 松果購物 · ihergo 愛合購 · 東森購物 (ETMall/森森) · PURE HEART 純淨之心 · 久億藥局 · 仁仁藥局 · Goodfind 比價 · K.U.P 官方網站 (kupomega3.com.tw)
+    <div class="disc">
+      ⚠ 資料說明：本頁資料由公開網路資訊彙整，價格與規格會隨時間與賣場變動，實際以各賣場頁面為準。部分購物網站價格以程式動態載入，無法由靜態抓取取得，已標示為「頁面查看」。不同賣場標示之代理商、每日建議食用量略有差異，屬正常現象。本資料僅供整理參考，非醫療建議；保健食品不具療效，特殊生理狀況者請先諮詢醫師或藥師。
+    </div>
+    <div class="meta" id="genMeta"></div>
+  </div>
+
+</div>
+
+<script>
+/* ---------- DATA ---------- */
+const PRODUCT = {
+  name:"K.U.P 晶球魚油",
+  fields:[
+    ["商品名稱","K.U.P 晶球魚油（韓國進口）"],
+    ["規格","2000 mg／包，28 包／盒"],
+    ["每包重量","約 3.2 g（含純魚油 2000 mg）"],
+    ["劑型","0.38 cm 微型無縫晶球膠囊（EE 乙酯型）"],
+    ["Omega-3 濃度","90%（EPA+DHA 占 84%）"],
+    ["EPA / DHA","EPA 920 mg｜DHA 760 mg（每包）"],
+    ["成分","魚油（含 DHA、EPA）"],
+    ["膠囊成分","明膠、D-山梨醇、甘油、純水"],
+    ["產地","韓國（世宗市）"],
+    ["製造 / 品牌","韓國聯合製藥（Korea United Pharm）"],
+    ["台灣代理","泰和碩藥品科技／沁軒貿易（依賣場而異）"],
+    ["保存期限","36 個月（3 年）"],
+    ["無添加","不含人工香料、色素、酵母、澱粉、麩質、防腐劑"]
+  ]
+};
+
+// price rows: price=null 表示未抓到明碼；packs 用於算每包單價
+const PRICES = [
+  {ch:"久億藥局 (joy91)", item:"單盒 28 包", price:1588, packs:28, note:"特價（原價 2,250）", star:true},
+  {ch:"Goodfind 比價平均", item:"單盒 28 包", price:4670, packs:28, note:"跨賣場平均值，僅供參考", star:true},
+  {ch:"momo 購物網", item:"單盒 28 包", price:null, packs:28, note:"頁面查看（動態載入）"},
+  {ch:"PChome 24h", item:"單盒 / X2 盒", price:null, packs:28, note:"頁面查看"},
+  {ch:"松果購物", item:"單盒 28 包", price:null, packs:28, note:"頁面查看"},
+  {ch:"博客來", item:"6 盒組 (28包×6)", price:null, packs:168, note:"頁面查看"},
+  {ch:"ihergo 愛合購", item:"單盒 28 包", price:null, packs:28, note:"全館免運"},
+  {ch:"東森 (ETMall/森森)", item:"單盒 / X3 盒", price:null, packs:28, note:"頁面查看"},
+  {ch:"PURE HEART 純淨之心", item:"單盒 28 包", price:null, packs:28, note:"頁面查看"}
+];
+
+const CERTS = [
+  {mark:"IFOS", nm:"IFOS 五星認證", ds:"國際魚油第三方檢測機構，就安全性、有效成分含量、雜質、新鮮度評鑑，最高 5 星。", gold:false},
+  {mark:"金獎", nm:"世界品質評鑑大賞 最高特級金獎", ds:"Monde Selection 最高等級評鑑。", gold:true},
+  {mark:"GMP", nm:"PIC/S GMP · cGMP · EUGMP", ds:"韓國前百強醫藥企業之製藥級工廠生產。", gold:false},
+  {mark:"FOS", nm:"海洋之友 (Friend of the Sea)", ds:"永續海洋來源認證。", gold:false},
+  {mark:"製程", nm:"自由落體無縫包覆法", ds:"無需高溫黏合，減少空氣接觸，較傳統旋轉法不易氧化變質。", gold:false},
+  {mark:"包裝", nm:"單獨鋁袋分包", ds:"每包獨立鋁袋，杜絕空氣接觸、鎖住新鮮、降低異味。", gold:false}
+];
+
+const USAGE = [
+  {t:"成人、長者基礎保養每日 1 包；孩童每日 1/2 包。建議隨餐或餐後食用，多食無益。", warn:false},
+  {t:"膠囊顆粒小，每包宜分 2–3 次食用，避免嗆到。", warn:false},
+  {t:"保存：置於陰涼乾燥處，避免陽光直射，開封後儘早食用完畢；置於兒童不易取得之處。", warn:false},
+  {t:"兒童、孕哺婦女、重大疾病、計劃進行手術、凝血功能不佳及正服用抗凝血藥劑者，食用前請先諮詢醫療專業人員。", warn:true},
+  {t:"本產品含有魚油；對海鮮過敏者請留意。", warn:true}
+];
+
+let CUSTOM = [];
+
+/* ---------- RENDER ---------- */
+function fmt(n){return n==null?"":n.toLocaleString("en-US");}
+
+function renderPrices(){
+  const tb=document.querySelector("#priceTable tbody"); tb.innerHTML="";
+  const known=PRICES.filter(p=>p.price!=null);
+  const min=Math.min(...known.map(p=>p.price)), max=Math.max(...known.map(p=>p.price));
+  PRICES.forEach(p=>{
+    const tr=document.createElement("tr");
+    let cls=""; if(p.price===min) cls="lo"; else if(p.price===max) cls="hi";
+    tr.className=cls;
+    const per = p.price!=null ? ("$"+ (p.price/p.packs).toFixed(1)) : "—";
+    tr.innerHTML=`<td>${p.ch}${p.star?'<span class="pill">✱ 明碼</span>':''}</td>
+      <td>${p.item}</td>
+      <td class="num ${p.price!=null?'price-known':'price-na'}">${p.price!=null?('$'+fmt(p.price)):'頁面查看'}</td>
+      <td class="num">${per}</td>
+      <td style="color:var(--muted);font-size:12.5px">${p.note}${cls==='lo'?' · 最低':cls==='hi'?' · 最高':''}</td>`;
+    tb.appendChild(tr);
+  });
+  const naCount=PRICES.length-known.length;
+  document.getElementById("priceAnalysis").innerHTML=
+    `目前成功抓到 <b>${known.length}</b> 筆明碼、<b>${naCount}</b> 筆需至頁面查看。已知價格區間 <b>$${fmt(min)} – $${fmt(max)}</b>，`+
+    `換算每包單價約 <b>$${(min/28).toFixed(1)} – $${(max/28).toFixed(1)}</b>。`+
+    `其中 Goodfind 平均值明顯偏高（含跨賣場與加價賣家），實際採購建議以藥局通路為基準。`;
+}
+
+function renderSpec(){
+  const g=document.getElementById("specGrid"); g.innerHTML="";
+  PRODUCT.fields.forEach(([k,v])=>{
+    const d=document.createElement("div"); d.className="cell";
+    d.innerHTML=`<div class="k">${k}</div><div class="v">${v}</div>`;
+    g.appendChild(d);
+  });
+}
+
+function renderCerts(){
+  const c=document.getElementById("certList"); c.innerHTML="";
+  CERTS.forEach(x=>{
+    const d=document.createElement("div"); d.className="cert"+(x.gold?" gold":"");
+    d.innerHTML=`<div class="mark">${x.mark}</div><div><div class="nm">${x.nm}</div><div class="ds">${x.ds}</div></div>`;
+    c.appendChild(d);
+  });
+}
+
+function renderUsage(){
+  const u=document.getElementById("usageList"); u.innerHTML="";
+  USAGE.forEach(x=>{
+    const li=document.createElement("li"); if(x.warn) li.className="warn"; li.textContent=x.t;
+    u.appendChild(li);
+  });
+}
+
+function renderCustom(){
+  const tb=document.querySelector("#customTable tbody"); tb.innerHTML="";
+  document.getElementById("customEmpty").style.display=CUSTOM.length?"none":"block";
+  document.getElementById("customTable").style.display=CUSTOM.length?"table":"none";
+  CUSTOM.forEach((it,i)=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${it.name}</td><td class="num">${it.price?('$'+fmt(Number(it.price))):'—'}</td>
+      <td style="color:var(--muted);font-size:12.5px">${it.note||''}</td>
+      <td><button class="rm" onclick="rmItem(${i})">移除</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function addItem(){
+  const n=document.getElementById("ci_name").value.trim();
+  if(!n){document.getElementById("ci_name").focus();return;}
+  CUSTOM.push({name:n, price:document.getElementById("ci_price").value.trim(), note:document.getElementById("ci_note").value.trim()});
+  document.getElementById("ci_name").value=document.getElementById("ci_price").value=document.getElementById("ci_note").value="";
+  renderCustom();
+}
+function rmItem(i){CUSTOM.splice(i,1);renderCustom();}
+
+/* ---------- EXCEL EXPORT ---------- */
+function exportExcel(){
+  if(typeof XLSX==="undefined"){alert("Excel 元件尚未載入完成，請稍候再試（需要網路載入一次）。");return;}
+  const wb=XLSX.utils.book_new();
+
+  // 產品資訊
+  const s1=[["欄位","內容"],...PRODUCT.fields];
+  const ws1=XLSX.utils.aoa_to_sheet(s1); ws1["!cols"]=[{wch:14},{wch:52}];
+  XLSX.utils.book_append_sheet(wb,ws1,"產品資訊");
+
+  // 通路比價
+  const s2=[["通路","品項／規格","售價(NT$)","每包單價","備註"]];
+  PRICES.forEach(p=>s2.push([p.ch,p.item,p.price!=null?p.price:"頁面查看",p.price!=null?Number((p.price/p.packs).toFixed(1)):"",p.note]));
+  if(CUSTOM.length){ s2.push(["","","","",""]); s2.push(["— 自訂加入品項 —","","","",""]);
+    CUSTOM.forEach(it=>s2.push([it.name,"",it.price?Number(it.price):"",""," "+(it.note||"")])); }
+  const ws2=XLSX.utils.aoa_to_sheet(s2); ws2["!cols"]=[{wch:22},{wch:18},{wch:12},{wch:10},{wch:26}];
+  XLSX.utils.book_append_sheet(wb,ws2,"通路比價");
+
+  // 認證品質
+  const s3=[["認證／項目","說明"],...CERTS.map(c=>[c.nm,c.ds])];
+  const ws3=XLSX.utils.aoa_to_sheet(s3); ws3["!cols"]=[{wch:28},{wch:50}];
+  XLSX.utils.book_append_sheet(wb,ws3,"認證品質");
+
+  // 食用與注意
+  const s4=[["項目","內容"]];
+  USAGE.forEach(u=>s4.push([u.warn?"⚠ 注意":"食用",u.t]));
+  const ws4=XLSX.utils.aoa_to_sheet(s4); ws4["!cols"]=[{wch:10},{wch:64}];
+  XLSX.utils.book_append_sheet(wb,ws4,"食用與注意");
+
+  const d=new Date(), ymd=d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");
+  XLSX.writeFile(wb,"KUP晶球魚油_資料彙整_"+ymd+".xlsx");
+}
+
+function printReport(){window.print();}
+
+/* ---------- INIT ---------- */
+renderPrices(); renderSpec(); renderCerts(); renderUsage(); renderCustom();
+const now=new Date();
+document.getElementById("genMeta").textContent="資料彙整產生時間："+now.toLocaleString("zh-TW");
+</script>
+</body>
+</html>
