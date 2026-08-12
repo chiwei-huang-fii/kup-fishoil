@@ -138,7 +138,7 @@ def to_excel_bytes(df, term):
 # 競品比較（大廠牌；顯示名 -> 搜尋關鍵字，可自行增減）
 # ---------------------------------------------------------------------------
 BRANDS = {
-    "K.U.P 晶球魚油": "K.U.P 晶球魚油",
+    "K.U.P 晶球魚油": "晶球魚油",
     "三得利 Suntory": "三得利 魚油 DHA EPA",
     "白蘭氏 Brand's": "白蘭氏 深海魚油",
     "大研生醫": "大研生醫 深海魚油",
@@ -238,7 +238,7 @@ tab1, tab2, tab3 = st.tabs(["🔎 即時比價搜尋", "🆚 競品比較", "�
 with tab1:
     col_in, col_btn = st.columns([4, 1])
     with col_in:
-        term = st.text_input("商品或成分名稱", value="K.U.P 晶球魚油",
+        term = st.text_input("商品或成分名稱", value="晶球魚油",
                              label_visibility="collapsed",
                              placeholder="輸入商品名稱，例如：K.U.P 晶球魚油")
     with col_btn:
