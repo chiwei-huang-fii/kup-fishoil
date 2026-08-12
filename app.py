@@ -1,0 +1,356 @@
+# -*- coding: utf-8 -*-
+"""
+K.U.P 晶球魚油 · 市場資料查詢 Demo
+專題報告用的現場展示小程式。
+輸入商品名 → 自動去購物通路抓即時價格 → 表格 + 圖表 + 下載 Excel。
+
+啟動方式（不用懂程式）：直接雙擊資料夾裡的「啟動程式.bat」即可。
+"""
+
+import io
+import re
+import datetime as dt
+
+import requests
+import pandas as pd
+import streamlit as st
+
+# ---------------------------------------------------------------------------
+# 基本設定
+# ---------------------------------------------------------------------------
+st.set_page_config(page_title="K.U.P 魚油 · 市場資料查詢", page_icon="🐟", layout="wide")
+
+HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
+    "Accept-Language": "zh-TW,zh;q=0.9",
+}
+TIMEOUT = 15
+PACKS_PER_BOX = 28  # K.U.P 一盒 28 包
+
+# ---------------------------------------------------------------------------
+# K.U.P 魚油 內建產品資料（供「產品資料卡」分頁，demo 一定看得到完整內容）
+# ---------------------------------------------------------------------------
+KUP_SPECS = [
+    ("規格", "2000 mg／包，28 包／盒"),
+    ("劑型", "0.38 cm 微型無縫晶球膠囊（EE 乙酯型）"),
+    ("Omega-3 濃度", "90%（EPA+DHA 占 84%）"),
+    ("EPA / DHA（每包）", "EPA 920 mg｜DHA 760 mg（合計 1680 mg）"),
+    ("成分", "魚油（含 DHA、EPA）"),
+    ("產地 / 品牌", "韓國世宗市／韓國聯合製藥 Korea United Pharm"),
+    ("台灣代理", "泰和碩藥品科技／沁軒貿易（依賣場而異）"),
+    ("保存期限", "36 個月（3 年）"),
+]
+KUP_CERTS = [
+    "IFOS 五星認證（國際魚油第三方檢測：安全性、含量、雜質、新鮮度）",
+    "世界品質評鑑大賞 最高特級金獎（Monde Selection）",
+    "PIC/S GMP · cGMP · EUGMP 製藥級工廠生產",
+    "海洋之友 Friend of the Sea 永續認證",
+    "自由落體無縫包覆製程（減少高溫與空氣接觸，不易氧化）",
+    "每包單獨鋁袋分包，杜絕空氣、鎖住新鮮",
+]
+KUP_USAGE = [
+    "成人／長者基礎保養每日 1 包，孩童每日 1/2 包，隨餐或餐後食用，多食無益。",
+    "膠囊顆粒小，每包宜分 2–3 次食用，避免嗆到。",
+    "孕哺婦女、重大疾病、計劃手術、凝血功能不佳或服用抗凝血藥劑者，食用前先諮詢醫療專業人員。",
+]
+KUP_REF_PRICES = pd.DataFrame({
+    "通路": ["久億藥局（特價）", "Goodfind 跨賣場平均"],
+    "售價 (NT$)": [1588, 4670],
+    "每包單價": [round(1588 / 28, 1), round(4670 / 28, 1)],
+})
+
+
+# ---------------------------------------------------------------------------
+# 抓取函式
+# ---------------------------------------------------------------------------
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_pchome(term, limit=30):
+    """PChome 24h 商品搜尋 API（穩定、含明碼價）。"""
+    url = "https://ecshweb.pchome.com.tw/search/v3.3/all/results"
+    r = requests.get(url, params={"q": term, "page": 1, "sort": "sale/dc"},
+                     headers=HEADERS, timeout=TIMEOUT)
+    r.raise_for_status()
+    prods = r.json().get("prods", []) or []
+    return [{
+        "通路": "PChome 24h",
+        "品項": (p.get("name") or "").strip(),
+        "價格": p.get("price"),
+        "網址": f"https://24h.pchome.com.tw/prod/{p.get('Id')}",
+    } for p in prods[:limit]]
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_momo(term, limit=30):
+    """momo 搜尋 API（盡力而為，有反爬，失敗就回空清單）。"""
+    url = "https://apisearch.momoshop.com.tw/momoSearchCloud/moec/textSearch"
+    payload = {"host": "momoshop", "flag": "searchEngine",
+               "data": {"searchValue": term, "curPage": "1",
+                        "priceS": "0", "priceE": "9999999", "searchType": "1"}}
+    r = requests.post(url, json=payload, headers=HEADERS, timeout=TIMEOUT)
+    r.raise_for_status()
+    goods = (r.json().get("rtnSearchData", {}) or {}).get("goodsInfoList", []) or []
+    return [{
+        "通路": "momo 購物網",
+        "品項": (g.get("goodsName") or "").strip(),
+        "價格": g.get("goodsPrice"),
+        "網址": f"https://www.momoshop.com.tw/goods/GoodsDetail.jsp?i_code={g.get('goodsCode')}",
+    } for g in goods[:limit]]
+
+
+SOURCES = [("PChome 24h", fetch_pchome), ("momo 購物網", fetch_momo)]
+
+
+def estimate_packs(name):
+    if not name:
+        return PACKS_PER_BOX
+    m = re.search(r"[xX×]\s*(\d+)\s*盒", name) or re.search(r"(\d+)\s*盒", name)
+    boxes = int(m.group(1)) if m else 1
+    return boxes * PACKS_PER_BOX
+
+
+def build_df(rows):
+    if not rows:
+        return pd.DataFrame(columns=["通路", "品項", "價格", "每包單價", "網址"])
+    df = pd.DataFrame(rows)
+    df["價格"] = pd.to_numeric(df["價格"], errors="coerce")
+    df["每包單價"] = df.apply(
+        lambda r: round(r["價格"] / estimate_packs(r["品項"]), 1)
+        if pd.notna(r["價格"]) else None, axis=1)
+    df = df.dropna(subset=["價格"]).drop_duplicates(subset=["通路", "品項"])
+    return df.sort_values("價格").reset_index(drop=True)
+
+
+def to_excel_bytes(df, term):
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        df.to_excel(xw, sheet_name="通路比價", index=False)
+        summary = pd.DataFrame({
+            "項目": ["搜尋關鍵字", "抓取時間", "筆數", "最低價", "最高價", "平均價"],
+            "值": [term, dt.datetime.now().strftime("%Y-%m-%d %H:%M"), len(df),
+                  df["價格"].min(), df["價格"].max(), round(df["價格"].mean())],
+        })
+        summary.to_excel(xw, sheet_name="分析摘要", index=False)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# 競品比較（大廠牌；顯示名 -> 搜尋關鍵字，可自行增減）
+# ---------------------------------------------------------------------------
+BRANDS = {
+    "K.U.P 晶球魚油": "K.U.P 晶球魚油",
+    "三得利 Suntory": "三得利 魚油 DHA EPA",
+    "白蘭氏 Brand's": "白蘭氏 深海魚油",
+    "大研生醫": "大研生醫 深海魚油",
+    "澳佳寶 Blackmores": "Blackmores 魚油",
+    "GNC 健安喜": "GNC 魚油",
+}
+FISH_KEYWORDS = ("魚油", "omega", "epa", "dha", "fish oil")
+
+
+def looks_like_fishoil(name):
+    n = (name or "").lower()
+    return any(k in n for k in FISH_KEYWORDS)
+
+
+def to_price(v):
+    """把可能含逗號/文字的價格轉成數字；轉不出來回 None。"""
+    if v is None:
+        return None
+    s = re.sub(r"[^\d.]", "", str(v))
+    return float(s) if s else None
+
+
+def parse_units(name):
+    """從品名粗估總粒/包數（含盒/瓶/入倍數），用來估每單位價；估不到回 None。"""
+    if not name:
+        return None
+    m = re.search(r"(\d+)\s*(?:粒|顆|包|錠|軟膠囊)", name)
+    if not m:
+        return None
+    base = int(m.group(1))
+    mm = (re.search(r"[xX×]\s*(\d+)\s*(?:盒|瓶|入|組)", name)
+          or re.search(r"(\d+)\s*(?:盒|瓶|入|組)", name))
+    return base * (int(mm.group(1)) if mm else 1)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def compare_brands(brand_items):
+    """brand_items: tuple of (顯示名, 搜尋關鍵字)；每個品牌抓回最便宜的魚油品項。"""
+    rows = []
+    for disp, kw in brand_items:
+        found = []
+        for _, fn in SOURCES:
+            try:
+                found += fn(kw)
+            except Exception:  # noqa: BLE001
+                pass
+        cand = []
+        for x in found:
+            if not looks_like_fishoil(x.get("品項", "")):
+                continue
+            p = to_price(x.get("價格"))
+            if p is None:
+                continue
+            x["_p"] = p
+            cand.append(x)
+        if not cand:
+            rows.append({"品牌": disp, "代表品項（最低價）": "— 這次未抓到 —",
+                         "售價 (NT$)": None, "每單位價": None,
+                         "找到筆數": 0, "網址": ""})
+            continue
+        cand.sort(key=lambda x: x["_p"])
+        best = cand[0]
+        units = parse_units(best["品項"])
+        rows.append({
+            "品牌": disp,
+            "代表品項（最低價）": best["品項"][:42],
+            "售價 (NT$)": int(best["_p"]),
+            "每單位價": round(best["_p"] / units, 1) if units else None,
+            "找到筆數": len(cand),
+            "網址": best["網址"],
+        })
+    return pd.DataFrame(rows)
+
+
+def to_excel_compare(df):
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        df.to_excel(xw, sheet_name="競品比價", index=False)
+        note = pd.DataFrame({"說明": [
+            "資料由 PChome / momo 搜尋自動抓取，取各品牌最便宜的魚油品項。",
+            "各品牌劑型與每份 EPA+DHA 含量不同，售價僅供概覽。",
+            "『每單位價』為由品名推估之粒/包單價，估不到會留空。",
+            f"產生時間：{dt.datetime.now():%Y-%m-%d %H:%M}",
+        ]})
+        note.to_excel(xw, sheet_name="說明", index=False)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# 介面
+# ---------------------------------------------------------------------------
+st.title("🐟 K.U.P 晶球魚油 · 市場資料查詢")
+st.caption("輸入商品名稱，程式會自動到各購物通路抓取即時價格，整理成表格並可下載 Excel。")
+
+tab1, tab2, tab3 = st.tabs(["🔎 即時比價搜尋", "🆚 競品比較", "📋 產品資料卡"])
+
+with tab1:
+    col_in, col_btn = st.columns([4, 1])
+    with col_in:
+        term = st.text_input("商品或成分名稱", value="K.U.P 晶球魚油",
+                             label_visibility="collapsed",
+                             placeholder="輸入商品名稱，例如：K.U.P 晶球魚油")
+    with col_btn:
+        go = st.button("開始搜尋", type="primary", use_container_width=True)
+
+    if go:
+        rows, errors = [], []
+        with st.spinner("正在搜尋各通路，請稍候…"):
+            for label, fn in SOURCES:
+                try:
+                    rows += fn(term)
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"{label}（{type(e).__name__}）")
+        df = build_df(rows)
+
+        if df.empty:
+            st.warning("這次沒有抓到明碼價格。可能是關鍵字太少結果，或通路把價格藏在動態頁面。"
+                       "可以換個關鍵字再試，或參考「產品資料卡」分頁。")
+        else:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("筆數", f"{len(df)}")
+            c2.metric("最低價", f"${int(df['價格'].min()):,}")
+            c3.metric("最高價", f"${int(df['價格'].max()):,}")
+            c4.metric("平均價", f"${int(round(df['價格'].mean())):,}")
+
+            st.dataframe(
+                df, use_container_width=True, hide_index=True,
+                column_config={"網址": st.column_config.LinkColumn("連結", display_text="開啟")},
+            )
+
+            chart = df.head(10).set_index("品項")["每包單價"]
+            st.subheader("每包單價比較（最便宜前 10 筆）")
+            st.bar_chart(chart)
+
+            st.download_button(
+                "⬇️ 下載 Excel", data=to_excel_bytes(df, term),
+                file_name=f"KUP價格_{dt.date.today():%Y%m%d}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary")
+
+        if errors:
+            st.caption("註：以下通路這次沒抓到資料 —— " + "、".join(errors) +
+                       "。動態載入的購物站需用 Playwright 才抓得到（報告可寫成技術說明）。")
+
+with tab2:
+    st.subheader("競品比較（自動搜尋大廠牌）")
+    st.caption("程式會同時搜尋 K.U.P 與各大魚油品牌，各抓回最便宜的魚油品項，做並排比較並可下載 Excel。")
+
+    all_brands = list(BRANDS.keys())
+    chosen = st.multiselect("要比較的品牌（可自行增減）", options=all_brands, default=all_brands)
+    extra = st.text_input("再加一個自訂品牌（選填）", placeholder="例如：Swisse 魚油")
+
+    if st.button("開始比較", type="primary"):
+        items = [(b, BRANDS[b]) for b in chosen]
+        if extra.strip():
+            items.append((extra.strip(), extra.strip()))
+        if not items:
+            st.warning("請至少選一個品牌。")
+        else:
+            with st.spinner("正在比較各品牌，請稍候（品牌越多越久）…"):
+                cdf = compare_brands(tuple(items))
+            priced = cdf[cdf["售價 (NT$)"].notna()].copy()
+
+            if priced.empty:
+                st.warning("這次各品牌都沒抓到明碼價格，稍後再試或減少品牌數量。")
+            else:
+                cheapest = priced.loc[priced["售價 (NT$)"].idxmin(), "品牌"]
+                c1, c2, c3 = st.columns(3)
+                c1.metric("比較品牌數", f"{len(priced)}")
+                c2.metric("最低售價品牌", cheapest)
+                c3.metric("最低售價", f"${int(priced['售價 (NT$)'].min()):,}")
+
+                st.dataframe(
+                    cdf, use_container_width=True, hide_index=True,
+                    column_config={"網址": st.column_config.LinkColumn("連結", display_text="開啟")})
+
+                st.subheader("各品牌代表售價")
+                st.bar_chart(priced.set_index("品牌")["售價 (NT$)"])
+
+                st.download_button(
+                    "⬇️ 下載競品比價 Excel", data=to_excel_compare(cdf),
+                    file_name=f"魚油競品比價_{dt.date.today():%Y%m%d}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary")
+
+            st.caption("註：各品牌劑型與每份 EPA+DHA 含量不同，售價僅供概覽；"
+                       "精準比較請看各商品頁的每份濃度。『每單位價』由品名推估，估不到會留空。")
+
+with tab3:
+    st.subheader("K.U.P 晶球魚油")
+    st.write("韓國進口 · 藥品級 EE 型態魚油 · 微型無縫晶球膠囊")
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Omega-3 純度", "90%")
+    m2.metric("EPA+DHA / 包", "1680 mg")
+    m3.metric("膠囊大小", "0.38 cm")
+    m4.metric("IFOS 認證", "5 ★")
+
+    st.markdown("#### 規格與成分")
+    st.table(pd.DataFrame(KUP_SPECS, columns=["項目", "內容"]))
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown("#### 認證與品質")
+        for c in KUP_CERTS:
+            st.markdown(f"- {c}")
+    with right:
+        st.markdown("#### 食用方式與注意事項")
+        for u in KUP_USAGE:
+            st.markdown(f"- {u}")
+        st.markdown("#### 市場價格參考")
+        st.table(KUP_REF_PRICES)
+
+    st.caption("資料由公開網路資訊彙整，價格與規格會隨時間變動，實際以各賣場頁面為準。"
+               "本資料僅供整理參考，非醫療建議。")
