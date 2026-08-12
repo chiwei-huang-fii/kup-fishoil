@@ -20,6 +20,43 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 st.set_page_config(page_title="K.U.P 魚油 · 市場資料查詢", page_icon="🐟", layout="wide")
 
+# --- 視覺樣式（清爽專業・海洋主題）---
+st.markdown("""
+<style>
+html, body, [class*="css"] {
+  font-family: "Segoe UI","PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif;
+}
+.kup-hero{
+  background: linear-gradient(120deg,#0e7c86 0%,#12a3a3 45%,#1b6ca8 100%);
+  border-radius:18px; padding:26px 30px; color:#fff; margin:4px 0 18px;
+  box-shadow:0 8px 24px rgba(14,124,134,.25);
+}
+.kup-hero .t{ font-size:30px; font-weight:800; letter-spacing:.5px; margin:0; }
+.kup-hero .s{ font-size:15px; opacity:.93; margin:6px 0 0; }
+.kup-chips{ margin-top:16px; display:flex; flex-wrap:wrap; gap:8px; }
+.kup-chips .c{
+  background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.4);
+  padding:6px 14px; border-radius:20px; font-size:13px; font-weight:700;
+}
+[data-testid="stMetric"]{
+  background:#ffffff; border:1px solid #e2ebee; border-radius:14px;
+  padding:14px 16px; box-shadow:0 2px 8px rgba(19,41,61,.05);
+}
+[data-testid="stMetricValue"]{ color:#0e7c86; font-weight:800; }
+[data-testid="stMetricLabel"]{ color:#5b7488; }
+.stButton>button, .stDownloadButton>button, .stLinkButton>a{
+  border-radius:10px; font-weight:700;
+}
+button[data-baseweb="tab"]{ font-size:15px; font-weight:600; }
+.kup-badges{ display:flex; flex-wrap:wrap; gap:10px; margin-top:4px; }
+.kup-badge{
+  background:#eaf6f6; color:#0a5b63; border:1px solid #bfe3e3;
+  border-radius:12px; padding:10px 14px; font-size:13.5px; line-height:1.4;
+}
+.kup-badge .d{ font-weight:400; color:#4b6a72; font-size:12.5px; }
+</style>
+""", unsafe_allow_html=True)
+
 HEADERS = {
     "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
@@ -297,8 +334,18 @@ def to_excel_compare(df):
 # ---------------------------------------------------------------------------
 # 介面
 # ---------------------------------------------------------------------------
-st.title("🐟 K.U.P 晶球魚油 · 市場資料查詢")
-st.caption("輸入商品名稱，程式會自動到各購物通路抓取即時價格，整理成表格並可下載 Excel。")
+st.markdown("""
+<div class="kup-hero">
+  <p class="t">🐟 K.U.P 晶球魚油 · 市場資料查詢</p>
+  <p class="s">韓國進口 · 藥品級 EE 型態魚油 · 微型無縫晶球膠囊｜自動抓取通路價格・整理成 Excel</p>
+  <div class="kup-chips">
+    <span class="c">Omega-3 90%</span>
+    <span class="c">EPA+DHA 1680mg</span>
+    <span class="c">IFOS 5★</span>
+    <span class="c">2000mg × 28 包</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs(["🔎 即時比價搜尋", "🆚 競品比較", "📋 產品資料卡"])
 
@@ -435,8 +482,18 @@ with tab3:
     left, right = st.columns(2)
     with left:
         st.markdown("#### 認證與品質")
+        badges = '<div class="kup-badges">'
         for c in KUP_CERTS:
-            st.markdown(f"- {c}")
+            if "（" in c:
+                name, desc = c.split("（", 1)
+                desc = desc.rstrip("）")
+            else:
+                name, desc = c, ""
+            badges += (f'<div class="kup-badge">✓ <b>{name}</b>'
+                       + (f'<br><span class="d">{desc}</span>' if desc else "")
+                       + '</div>')
+        badges += '</div>'
+        st.markdown(badges, unsafe_allow_html=True)
     with right:
         st.markdown("#### 食用方式與注意事項")
         for u in KUP_USAGE:
